@@ -1,0 +1,20 @@
+{
+  "version": "0.2.0",
+  "configurations": [
+    {
+      "type": "java",
+      "name": "Iniciar servidor con imagen oficial",
+      "request": "launch",
+      "mainClass": "blackwall.servidor.IniciarServidor",
+      "args": "${input:archivoImagen} 8080",
+      "cwd": "${workspaceFolder}"
+    }
+  ],
+  "inputs": [
+    {
+      "id": "archivoImagen",
+      "type": "promptString",
+      "description": "Ruta absoluta de la imagen oficial"
+    }
+  ]
+}

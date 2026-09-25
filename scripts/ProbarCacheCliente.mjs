@@ -1,0 +1,28 @@
+import { CacheMosaicos } from '../interfaz/cache-mosaicos.mjs';
+import assert from 'node:assert/strict';
+
+const mosaico = () => ({ width: 256, height: 256 });
+const cache = new CacheMosaicos(3, 3 * 256 * 256 * 4);
+cache.set('a', mosaico()).set('b', mosaico()).set('c', mosaico());
+assert.equal(cache.bytes, 3 * 256 * 256 * 4);
+assert.ok(cache.get('a'));
+cache.set('d', mosaico());
+assert.deepEqual([...cache.keys()], ['a', 'c', 'd']);
+assert.equal(cache.get('b'), undefined);
+cache.set('a', mosaico());
+assert.equal(cache.bytes, 3 * 256 * 256 * 4);
+cache.delete('c');
+assert.equal(cache.bytes, 2 * 256 * 256 * 4);
+const porBytes = new CacheMosaicos(10, 256 * 256 * 4);
+porBytes.set('a', mosaico()).set('b', mosaico());
+assert.deepEqual([...porBytes.keys()], ['b']);
+const coste = new CacheMosaicos(2, 4 * 256 * 256 * 4);
+coste.set('barato', mosaico(), 100).set('caro', mosaico(), 1000).set('nuevo', mosaico(), 200);
+assert.deepEqual([...coste.keys()], ['caro', 'nuevo']);
+const frecuencia = new CacheMosaicos(2, 4 * 256 * 256 * 4);
+frecuencia.set('frecuente', mosaico(), 100);
+frecuencia.get('frecuente');
+frecuencia.get('frecuente');
+frecuencia.set('ocasional', mosaico(), 100).set('nuevo', mosaico(), 100);
+assert.deepEqual([...frecuencia.keys()], ['frecuente', 'nuevo']);
+console.log('[OK] Caché cliente GDSF: coste, tamaño, frecuencia y límites.');

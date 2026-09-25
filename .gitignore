@@ -1,0 +1,3 @@
+construccion/
+datos/*
+!datos/.gitkeep

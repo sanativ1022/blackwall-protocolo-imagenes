@@ -1,0 +1,6 @@
+{
+  "java.project.sourcePaths": ["src/principal/java", "src/pruebas/java"],
+  "java.project.outputPath": "construccion/vscode",
+  "files.exclude": { "construccion": true },
+  "explorer.sortOrder": "type"
+}
