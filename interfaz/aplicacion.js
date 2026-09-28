@@ -209,6 +209,8 @@ function crc32(bytes) {
 }
 
 function dibujar() {
+  // En la resolución original, conservar los bordes de cada píxel al ampliar.
+  contexto.imageSmoothingEnabled = nivel !== imagen.maximo;
   contexto.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   if (fondoGeneral && nivel > 0) contexto.drawImage(fondoGeneral,
     region.x * fondoGeneral.width / imagen.ancho,

@@ -9,9 +9,12 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Iterator;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 public final class LectorImagenRegional {
     private final long maximoPixeles;
+    private final Map<Path, LectorPngGigante> pngGigantes = new ConcurrentHashMap<>();
     public LectorImagenRegional(long maximoPixeles) {
         if (maximoPixeles < 4096) throw new IllegalArgumentException("Limite demasiado pequeno");
         this.maximoPixeles = maximoPixeles;
@@ -50,6 +53,20 @@ public final class LectorImagenRegional {
             if (psb.ancho() != descriptor.ancho() || psb.alto() != descriptor.alto())
                 throw new IOException("El archivo PSB cambio desde su registro");
             return LectorPsbRegional.leer(descriptor.archivo(), psb, region, submuestreo);
+        }
+        if (descriptor.formato().equals("PNG") && (long) descriptor.ancho() * descriptor.alto() > Integer.MAX_VALUE) {
+            LectorPngGigante gigante = pngGigantes.get(descriptor.archivo());
+            if (gigante == null) {
+                synchronized (pngGigantes) {
+                    gigante = pngGigantes.get(descriptor.archivo());
+                    if (gigante == null) {
+                        gigante = new LectorPngGigante(descriptor.archivo(), Math.toIntExact(descriptor.ancho()),
+                                Math.toIntExact(descriptor.alto()));
+                        pngGigantes.put(descriptor.archivo(), gigante);
+                    }
+                }
+            }
+            return gigante.leer(region, submuestreo);
         }
         try (ImageInputStream entrada = ImageIO.createImageInputStream(Files.newInputStream(descriptor.archivo()))) {
             ImageReader lector = lectorPara(entrada);

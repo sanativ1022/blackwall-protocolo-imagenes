@@ -64,6 +64,23 @@ public final class PruebasIntegracionServidor {
                 verificar(get(cliente, base + "/protocolo/estado?sesion=" + sesion).contains("lecturas=2"),
                         "region cacheada no relee la imagen de disco");
 
+                // Una entrada expulsada por GDSF ya no se anuncia al servidor:
+                // este debe volver a programar el detalle ausente, no omitirlo.
+                String soloPreviaEnCache = "sesion=" + sesion
+                        + "&imagen=numeros&vista=3&x=0&y=0&ancho=256&alto=256&nivel=1&ventana=4"
+                        + "&cache=numeros%3A1%3A0%3A0%3AP";
+                verificar(postTexto(cliente, base + "/protocolo/vistas", soloPreviaEnCache).contains("mosaicos=1"),
+                        "detalle expulsado se vuelve a programar");
+                byte[] loteTrasExpulsion = postRespuesta(cliente, base + "/protocolo/lotes",
+                        "sesion=" + sesion + "&vista=3&ack=0&ventana=4").body();
+                verificar(secuencias(loteTrasExpulsion).equals(List.of(1L)),
+                        "detalle expulsado vuelve a transmitirse");
+                verificar(get(cliente, base + "/protocolo/estado?sesion=" + sesion).contains("enVuelo=1"),
+                        "reenvio espera confirmacion de recepcion");
+                postRespuesta(cliente, base + "/protocolo/lotes",
+                        "sesion=" + sesion + "&vista=3&ack=1&ventana=4");
+                System.out.println("[OK] Integracion GDSF-servidor: bloque retenido evita envio; bloque expulsado se retransmite.");
+
                 String sesionConPerdida = postTexto(cliente, base + "/protocolo/sesiones", "").substring("sesion=".length());
                 String vistaConPerdida = "sesion=" + sesionConPerdida
                         + "&imagen=numeros&vista=1&x=0&y=0&ancho=256&alto=256&nivel=1&ventana=4";
