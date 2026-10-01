@@ -20,4 +20,6 @@ java -ea -cp $pruebas blackwall.pruebas.PruebasAdaptacionFlare
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de adaptacion Flare fallaron.' }
 node 'scripts\ProbarCacheCliente.mjs'
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de cache cliente fallaron.' }
+node 'scripts\ProbarNavegacionZoom.mjs'
+if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de navegacion y zoom fallaron.' }
 } finally { Pop-Location }

@@ -1,4 +1,5 @@
 import { CacheMosaicos } from './cache-mosaicos.mjs';
+import { cambiarZoom } from './navegacion-zoom.mjs';
 
 const canvas = document.querySelector('#visor');
 const nivelActual = document.querySelector('#nivelActual');
@@ -9,6 +10,7 @@ let fondoGeneral = null;
 let fondoGeneralFinal = false;
 const recibidas = new Set();
 const movimientos = [];
+const historialZoom = [];
 let sesion, imagen, nivel = 0, vista = 0;
 let region = { x: 0, y: 0, ancho: 1, alto: 1 };
 let arrastre = null, temporizador = null, solicitando = false, nuevaVistaPendiente = false;
@@ -55,19 +57,17 @@ function mostrarNivel() {
 }
 
 function configurarEventos() {
-  addEventListener('resize', () => { ajustarCanvas(); solicitarPronto(); });
+  addEventListener('resize', () => { historialZoom.length = 0; ajustarCanvas(); solicitarPronto(); });
   canvas.addEventListener('wheel', evento => {
     evento.preventDefault();
-    nivel = Math.max(0, Math.min(imagen.maximo, nivel + (evento.deltaY < 0 ? 1 : -1)));
+    const resultado = cambiarZoom({ nivel, region, direccion: evento.deltaY < 0 ? 1 : -1,
+      pivoteX: evento.offsetX / canvas.clientWidth, pivoteY: evento.offsetY / canvas.clientHeight,
+      imagen, historial: historialZoom });
+    if (resultado.nivel === nivel) return;
+    nivel = resultado.nivel;
+    region = resultado.region;
     mostrarNivel();
-    const factor = evento.deltaY < 0 ? 0.55 : 1.8;
-    const centroX = region.x + region.ancho * evento.offsetX / canvas.clientWidth;
-    const centroY = region.y + region.alto * evento.offsetY / canvas.clientHeight;
-    region.ancho = Math.max(64, Math.min(imagen.ancho, region.ancho * factor));
-    region.alto = Math.max(64, Math.min(imagen.alto, region.alto * factor));
-    region.x = centroX - region.ancho * evento.offsetX / canvas.clientWidth;
-    region.y = centroY - region.alto * evento.offsetY / canvas.clientHeight;
-    limitarRegion(); solicitarPronto();
+    solicitarPronto();
   }, { passive: false });
   canvas.addEventListener('pointerdown', evento => {
     arrastre = { x: evento.clientX, y: evento.clientY, tiempo: performance.now() };
@@ -79,6 +79,7 @@ function configurarEventos() {
     const ahora = performance.now();
     const dx = (arrastre.x - evento.clientX) * region.ancho / canvas.clientWidth;
     const dy = (arrastre.y - evento.clientY) * region.alto / canvas.clientHeight;
+    if (dx !== 0 || dy !== 0) historialZoom.length = 0;
     const segundos = Math.max(0.005, (ahora - arrastre.tiempo) / 1000);
     movimientos.push({ vx: dx / segundos, vy: dy / segundos });
     if (movimientos.length > 5) movimientos.shift();
