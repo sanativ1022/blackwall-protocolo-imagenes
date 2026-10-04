@@ -4,6 +4,7 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.Collection;
+import java.util.Comparator;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
@@ -23,8 +24,7 @@ public final class CatalogoImagenes {
         if (descriptor == null) throw new IllegalArgumentException("Imagen desconocida");
         return descriptor;
     }
-    public Collection<DescriptorImagen> todas() { return Listado.inmutable(imagenes.values()); }
-    private static final class Listado {
-        static <T> Collection<T> inmutable(Collection<T> origen) { return java.util.List.copyOf(origen); }
+    public Collection<DescriptorImagen> todas() {
+        return imagenes.values().stream().sorted(Comparator.comparing(DescriptorImagen::id)).toList();
     }
 }

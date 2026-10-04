@@ -6,7 +6,7 @@ import blackwall.sesion.*;
 import java.io.*;
 import java.util.*;
 
-public final class ServicioProtocoloImagenes {
+public final class ServicioProtocoloImagenes implements AutoCloseable {
     private final GestorSesiones sesiones;
     private final CatalogoImagenes catalogo;
     private final LectorImagenRegional lector;
@@ -59,4 +59,5 @@ public final class ServicioProtocoloImagenes {
     public int prediccionesPendientes(String idSesion) { return sesiones.obtener(idSesion).prediccionesPendientes(); }
     public SesionTransferencia sesion(String idSesion) { return sesiones.obtener(idSesion); }
     public Collection<DescriptorImagen> imagenes() { return catalogo.todas(); }
+    @Override public void close() { sesiones.close(); }
 }

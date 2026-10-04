@@ -23,12 +23,16 @@ public final class PruebasIntegracionServidor {
             ImageIO.write(imagen, "png", temporal.toFile());
             LectorImagenRegional lector = new LectorImagenRegional(512L * 512L);
             CatalogoImagenes catalogo = new CatalogoImagenes(lector); catalogo.registrar("numeros", temporal, 256);
+            catalogo.registrar("otra", temporal, 256);
             var servicio = new ServicioProtocoloImagenes(new GestorSesiones(32), catalogo, lector);
             try (var servidor = new ServidorHttpConcurrente(new InetSocketAddress("127.0.0.1", 0), servicio, java.nio.file.Path.of("interfaz"))) {
                 servidor.iniciar(); String base = "http://127.0.0.1:" + servidor.puerto();
                 HttpClient cliente = HttpClient.newHttpClient();
                 verificar(get(cliente, base + "/salud").equals("DISPONIBLE"), "servidor responde");
                 verificar(get(cliente, base + "/").contains("Visor BlackWall"), "interfaz se sirve desde el mismo origen");
+                String listado = get(cliente, base + "/protocolo/imagenes");
+                verificar(listado.contains("numeros|") && listado.contains("otra|")
+                        && listado.indexOf("numeros|") < listado.indexOf("otra|"), "catalogo ordenado con dos imagenes");
                 String sesion = postTexto(cliente, base + "/protocolo/sesiones", "").substring("sesion=".length());
                 String vista = "sesion=" + sesion + "&imagen=numeros&vista=1&x=0&y=0&ancho=256&alto=256&nivel=1&ventana=4";
                 verificar(postTexto(cliente, base + "/protocolo/vistas", vista).contains("ACEPTADA"), "vista aceptada");
@@ -80,6 +84,15 @@ public final class PruebasIntegracionServidor {
                 postRespuesta(cliente, base + "/protocolo/lotes",
                         "sesion=" + sesion + "&vista=3&ack=1&ventana=4");
                 System.out.println("[OK] Integracion GDSF-servidor: bloque retenido evita envio; bloque expulsado se retransmite.");
+
+                String cambioImagen = "sesion=" + sesion
+                        + "&imagen=otra&vista=4&x=0&y=0&ancho=256&alto=256&nivel=1&ventana=4"
+                        + "&cache=numeros%3A1%3A0%3A0%3AP%2Cnumeros%3A1%3A0%3A0%3AF";
+                verificar(postTexto(cliente, base + "/protocolo/vistas", cambioImagen).contains("mosaicos=2"),
+                        "cambiar de imagen programa sus propios mosaicos aunque otra este cacheada");
+                verificar(!secuencias(postRespuesta(cliente, base + "/protocolo/lotes",
+                        "sesion=" + sesion + "&vista=4&ack=0&ventana=4").body()).isEmpty(),
+                        "la segunda imagen entrega datos");
 
                 String sesionConPerdida = postTexto(cliente, base + "/protocolo/sesiones", "").substring("sesion=".length());
                 String vistaConPerdida = "sesion=" + sesionConPerdida

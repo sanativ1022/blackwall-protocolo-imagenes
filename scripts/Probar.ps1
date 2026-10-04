@@ -14,6 +14,8 @@ java -ea -cp $pruebas blackwall.pruebas.PruebasImagenRegional
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas regionales fallaron.' }
 java -ea -cp $pruebas blackwall.pruebas.PruebasIntegracionServidor
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de integracion fallaron.' }
+java -ea -cp $pruebas blackwall.pruebas.PruebasLimpiezaSesiones
+if ($LASTEXITCODE -ne 0) { throw 'La prueba de limpieza de sesiones fallo.' }
 java -ea -cp $pruebas blackwall.pruebas.PruebasPoliticasProtocolo
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de politicas fallaron.' }
 java -ea -cp $pruebas blackwall.pruebas.PruebasAdaptacionFlare
@@ -22,4 +24,6 @@ node 'scripts\ProbarCacheCliente.mjs'
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de cache cliente fallaron.' }
 node 'scripts\ProbarNavegacionZoom.mjs'
 if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de navegacion y zoom fallaron.' }
+node 'scripts\ProbarRecuperacionSesion.mjs'
+if ($LASTEXITCODE -ne 0) { throw 'Las pruebas de recuperacion de sesion fallaron.' }
 } finally { Pop-Location }

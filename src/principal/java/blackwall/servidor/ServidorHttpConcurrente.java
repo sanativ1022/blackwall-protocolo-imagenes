@@ -33,7 +33,7 @@ public final class ServidorHttpConcurrente implements AutoCloseable {
     }
     public void iniciar() { servidor.start(); }
     public int puerto() { return servidor.getAddress().getPort(); }
-    @Override public void close() { servidor.stop(0); }
+    @Override public void close() { servidor.stop(0); servicio.close(); }
 
     private void salud(HttpExchange e) throws IOException { responderTexto(e, 200, "DISPONIBLE"); }
     private void sesiones(HttpExchange e) throws IOException {

@@ -1,8 +1,10 @@
 import { CacheMosaicos } from './cache-mosaicos.mjs';
 import { cambiarZoom } from './navegacion-zoom.mjs';
+import { esSesionDesconocida, crearRenovadorSesion } from './recuperacion-sesion.mjs';
 
 const canvas = document.querySelector('#visor');
 const nivelActual = document.querySelector('#nivelActual');
+const selectorImagen = document.querySelector('#selectorImagen');
 const contexto = canvas.getContext('2d');
 const formulario = valores => new URLSearchParams(valores).toString();
 const cache = new CacheMosaicos();
@@ -12,12 +14,19 @@ const recibidas = new Set();
 const movimientos = [];
 const historialZoom = [];
 let sesion, imagen, nivel = 0, vista = 0;
+let imagenes = [];
+let generacionImagen = 0;
 let region = { x: 0, y: 0, ancho: 1, alto: 1 };
 let arrastre = null, temporizador = null, solicitando = false, nuevaVistaPendiente = false;
 let movimientoPendiente = { direccionX: 0, direccionY: 0, velocidadX: 0, velocidadY: 0, estabilidad: 0 };
 let ack = 0;
 let vistaConcluida = 0;
 let mosaicosVista = 0;
+const renovarSesion = crearRenovadorSesion(
+  async () => new URLSearchParams(await pedirTexto('/protocolo/sesiones', { method: 'POST' })).get('sesion'),
+  () => sesion,
+  nueva => { sesion = nueva; ack = 0; recibidas.clear(); vistaConcluida = 0; }
+);
 
 async function pedirTexto(url, opciones = {}) {
   const respuesta = await fetch(url, opciones);
@@ -28,8 +37,18 @@ async function pedirTexto(url, opciones = {}) {
 async function iniciar() {
   ajustarCanvas();
   sesion = (await pedirTexto('/protocolo/sesiones', { method: 'POST' })).split('=')[1];
-  const linea = (await pedirTexto('/protocolo/imagenes')).trim().split('\n')[0].split('|');
-  imagen = { id: linea[0], ancho: Number(linea[1]), alto: Number(linea[2]), maximo: Number(linea[3]) };
+  imagenes = (await pedirTexto('/protocolo/imagenes')).trim().split('\n').filter(Boolean).map(linea => {
+    const [id, ancho, alto, maximo] = linea.split('|');
+    return { id, ancho: Number(ancho), alto: Number(alto), maximo: Number(maximo) };
+  });
+  if (!imagenes.length) throw Error('No hay imágenes registradas');
+  for (const entrada of imagenes) {
+    const opcion = document.createElement('option');
+    opcion.value = entrada.id;
+    opcion.textContent = entrada.id;
+    selectorImagen.append(opcion);
+  }
+  imagen = imagenes[0];
   nivel = 0;
   mostrarNivel();
   encuadrar(); configurarEventos();
@@ -57,6 +76,23 @@ function mostrarNivel() {
 }
 
 function configurarEventos() {
+  selectorImagen.addEventListener('change', () => {
+    const elegida = imagenes.find(entrada => entrada.id === selectorImagen.value);
+    if (!elegida || elegida.id === imagen.id) return;
+    imagen = elegida;
+    generacionImagen++;
+    nivel = 0;
+    historialZoom.length = 0;
+    movimientos.length = 0;
+    arrastre = null;
+    fondoGeneral = null;
+    fondoGeneralFinal = false;
+    vistaConcluida = vista;
+    encuadrar();
+    mostrarNivel();
+    dibujar();
+    solicitarPronto();
+  });
   addEventListener('resize', () => { historialZoom.length = 0; ajustarCanvas(); solicitarPronto(); });
   canvas.addEventListener('wheel', evento => {
     evento.preventDefault();
@@ -120,18 +156,35 @@ async function solicitarVista() {
   if (solicitando) { nuevaVistaPendiente = true; return; }
   solicitando = true;
   try {
-    const proxima = vista + 1;
-    const parametros = formulario({ sesion, imagen: imagen.id, vista: proxima,
-      x: Math.floor(region.x), y: Math.floor(region.y), ancho: Math.max(1, Math.floor(region.ancho)),
-      alto: Math.max(1, Math.floor(region.alto)), nivel, ventana: 16,
-      ...movimientoPendiente, cache: [...cache.keys()].join(',') });
-    const aceptacion = new URLSearchParams(await pedirTexto('/protocolo/vistas', { method: 'POST', body: parametros }));
-    mosaicosVista = Number(aceptacion.get('mosaicos'));
-    vista = proxima; ack = 0; recibidas.clear();
-    dibujar();
-    if (mosaicosVista === 0) {
-      // La vista ya esta completa en el cliente: no pedir un lote vacio.
-      vistaConcluida = vista;
+    for (let intento = 0; intento < 2; intento++) {
+      const sesionSolicitada = sesion;
+      const proxima = vista + 1;
+      const parametros = formulario({ sesion: sesionSolicitada, imagen: imagen.id, vista: proxima,
+        x: Math.floor(region.x), y: Math.floor(region.y), ancho: Math.max(1, Math.floor(region.ancho)),
+        alto: Math.max(1, Math.floor(region.alto)), nivel, ventana: 16,
+        ...movimientoPendiente, cache: [...cache.keys()].join(',') });
+      let aceptacion;
+      try {
+        aceptacion = new URLSearchParams(await pedirTexto('/protocolo/vistas', { method: 'POST', body: parametros }));
+      } catch (error) {
+        if (intento === 0 && esSesionDesconocida(error)) {
+          await renovarSesion(sesionSolicitada);
+          continue;
+        }
+        throw error;
+      }
+      if (sesionSolicitada !== sesion) {
+        nuevaVistaPendiente = true;
+        return;
+      }
+      mosaicosVista = Number(aceptacion.get('mosaicos'));
+      vista = proxima; ack = 0; recibidas.clear();
+      dibujar();
+      if (mosaicosVista === 0) {
+        // La vista ya esta completa en el cliente: no pedir un lote vacio.
+        vistaConcluida = vista;
+      }
+      return;
     }
   } finally {
     solicitando = false;
@@ -143,14 +196,18 @@ async function ciclo() {
   let demoraReintento = 500;
   while (true) {
     let demora = 80;
+    let sesionLote = null;
     try {
       if (!solicitando && vista > 0 && vista !== vistaConcluida) {
         const vistaSolicitada = vista;
+        const generacionSolicitada = generacionImagen;
+        sesionLote = sesion;
         const sack = [...recibidas].filter(n => n > ack).sort((a, b) => a - b).map(n => `${n}-${n}`).join(',');
         const respuesta = await fetch('/protocolo/lotes', { method: 'POST', body: formulario({
-          sesion, vista: vistaSolicitada, ack, sack, ventana: 16, demoraAck: 0 }) });
+          sesion: sesionLote, vista: vistaSolicitada, ack, sack, ventana: 16, demoraAck: 0 }) });
+        if (sesionLote !== sesion) continue;
         if (!respuesta.ok) throw Error(await respuesta.text());
-        await procesarLote(await respuesta.arrayBuffer(), vistaSolicitada);
+        await procesarLote(await respuesta.arrayBuffer(), vistaSolicitada, generacionSolicitada);
         const estado = await actualizarEstado(respuesta.headers.get('X-Estado-Protocolo'), vistaSolicitada);
         if (vistaSolicitada === vista && estado && estado.pendientes === 0 && estado.enVuelo === 0) {
           vistaConcluida = vistaSolicitada;
@@ -158,6 +215,14 @@ async function ciclo() {
         demoraReintento = 500;
       }
     } catch (error) {
+      if (esSesionDesconocida(error)) {
+        try {
+          await renovarSesion(sesionLote);
+          await solicitarVista();
+          demoraReintento = 500;
+          continue;
+        } catch (falloRecuperacion) { error = falloRecuperacion; }
+      }
       if (!solicitando) mostrarError(error);
       demora = demoraReintento;
       demoraReintento = Math.min(demoraReintento * 2, 8000);
@@ -166,8 +231,8 @@ async function ciclo() {
   }
 }
 
-async function procesarLote(buffer, vistaSolicitada) {
-  if (vistaSolicitada !== vista) return;
+async function procesarLote(buffer, vistaSolicitada, generacionSolicitada) {
+  if (vistaSolicitada !== vista || generacionSolicitada !== generacionImagen) return;
   const datos = new DataView(buffer);
   let posicion = 0;
   const cantidad = datos.getInt32(posicion); posicion += 4;
@@ -190,7 +255,7 @@ async function procesarLote(buffer, vistaSolicitada) {
     try {
       await new Promise((resolver, fallar) => { mosaico.onload = resolver; mosaico.onerror = fallar; mosaico.src = url; });
     } finally { URL.revokeObjectURL(url); }
-    if (vistaDato !== vista) continue;
+    if (vistaDato !== vista || generacionSolicitada !== generacionImagen) continue;
     if (id === `${imagen.id}:0:0:0:F`) { fondoGeneral = mosaico; fondoGeneralFinal = true; }
     else if (id === `${imagen.id}:0:0:0:P` && !fondoGeneralFinal) fondoGeneral = mosaico;
     cache.set(id, mosaico, contenido.byteLength);
