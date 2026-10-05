@@ -4,6 +4,7 @@ import { esSesionDesconocida, crearRenovadorSesion } from './recuperacion-sesion
 
 const canvas = document.querySelector('#visor');
 const nivelActual = document.querySelector('#nivelActual');
+const estadoCarga = document.querySelector('#estadoCarga');
 const selectorImagen = document.querySelector('#selectorImagen');
 const contexto = canvas.getContext('2d');
 const formulario = valores => new URLSearchParams(valores).toString();
@@ -38,8 +39,8 @@ async function iniciar() {
   ajustarCanvas();
   sesion = (await pedirTexto('/protocolo/sesiones', { method: 'POST' })).split('=')[1];
   imagenes = (await pedirTexto('/protocolo/imagenes')).trim().split('\n').filter(Boolean).map(linea => {
-    const [id, ancho, alto, maximo] = linea.split('|');
-    return { id, ancho: Number(ancho), alto: Number(alto), maximo: Number(maximo) };
+    const [id, ancho, alto, maximo, formato] = linea.split('|');
+    return { id, ancho: Number(ancho), alto: Number(alto), maximo: Number(maximo), formato };
   });
   if (!imagenes.length) throw Error('No hay imágenes registradas');
   for (const entrada of imagenes) {
@@ -51,8 +52,10 @@ async function iniciar() {
   imagen = imagenes[0];
   nivel = 0;
   mostrarNivel();
+  mostrarCarga();
   encuadrar(); configurarEventos();
-  await solicitarVista();
+  try { await solicitarVista(); }
+  catch (error) { mostrarError(error); programarVista(1000, generacionImagen); }
   ciclo();
 }
 
@@ -75,6 +78,11 @@ function mostrarNivel() {
   nivelActual.textContent = `Nivel ${nivel}/${imagen.maximo}`;
 }
 
+function mostrarCarga() {
+  estadoCarga.textContent = `Preparando ${imagen.id}…`;
+  estadoCarga.hidden = false;
+}
+
 function configurarEventos() {
   selectorImagen.addEventListener('change', () => {
     const elegida = imagenes.find(entrada => entrada.id === selectorImagen.value);
@@ -90,6 +98,7 @@ function configurarEventos() {
     vistaConcluida = vista;
     encuadrar();
     mostrarNivel();
+    mostrarCarga();
     dibujar();
     solicitarPronto();
   });
@@ -148,8 +157,20 @@ function limitarRegion() {
 
 function solicitarPronto(movimiento = { direccionX: 0, direccionY: 0, velocidadX: 0, velocidadY: 0, estabilidad: 0 }) {
   movimientoPendiente = movimiento;
+  programarVista(120, generacionImagen);
+}
+
+function programarVista(demora, generacion) {
   clearTimeout(temporizador);
-  temporizador = setTimeout(() => solicitarVista().catch(error => mostrarError(error)), 120);
+  temporizador = setTimeout(async () => {
+    if (generacion !== generacionImagen) return;
+    try { await solicitarVista(); }
+    catch (error) {
+      if (generacion !== generacionImagen) return;
+      mostrarError(error);
+      programarVista(Math.min(demora * 2, 8000), generacion);
+    }
+  }, demora);
 }
 
 async function solicitarVista() {
@@ -275,8 +296,10 @@ function crc32(bytes) {
 }
 
 function dibujar() {
-  // En la resolución original, conservar los bordes de cada píxel al ampliar.
-  contexto.imageSmoothingEnabled = nivel !== imagen.maximo;
+  // Suavizar la fotografía al ampliarla; en las imágenes numéricas conservar
+  // los bordes exactos de los dígitos cuando se alcanza la resolución original.
+  contexto.imageSmoothingEnabled = imagen.formato === 'PSB' || nivel !== imagen.maximo;
+  contexto.imageSmoothingQuality = 'high';
   contexto.clearRect(0, 0, canvas.clientWidth, canvas.clientHeight);
   if (fondoGeneral && nivel > 0) contexto.drawImage(fondoGeneral,
     region.x * fondoGeneral.width / imagen.ancho,
@@ -292,6 +315,7 @@ function dibujar() {
     const a = idA.split(':'), b = idB.split(':');
     return Number(a[1]) - Number(b[1]) || Number(a[4] === 'F') - Number(b[4] === 'F');
   });
+  let dibujados = 0;
   for (const [id, mosaico] of disponibles) {
     const partes = id.split(':');
     const lado = 256 * 2 ** (imagen.maximo - Number(partes[1]));
@@ -301,8 +325,24 @@ function dibujar() {
     contexto.drawImage(mosaico, (x - region.x) * canvas.clientWidth / region.ancho,
       (y - region.y) * canvas.clientHeight / region.alto,
       ancho * canvas.clientWidth / region.ancho, alto * canvas.clientHeight / region.alto);
+    dibujados++;
     cache.get(id); // El mosaico dibujado gana frecuencia en GDSF.
   }
+  const finales = new Set(cache.keys());
+  const ladoActual = 256 * 2 ** (imagen.maximo - nivel);
+  const primeraColumna = Math.floor(region.x / ladoActual);
+  const ultimaColumna = Math.floor((Math.min(imagen.ancho, Math.ceil(region.x + region.ancho)) - 1) / ladoActual);
+  const primeraFila = Math.floor(region.y / ladoActual);
+  const ultimaFila = Math.floor((Math.min(imagen.alto, Math.ceil(region.y + region.alto)) - 1) / ladoActual);
+  let detalleCompleto = true;
+  for (let fila = primeraFila; fila <= ultimaFila; fila++) {
+    for (let columna = primeraColumna; columna <= ultimaColumna; columna++) {
+      if (!finales.has(`${imagen.id}:${nivel}:${columna}:${fila}:F`)) detalleCompleto = false;
+    }
+  }
+  estadoCarga.hidden = detalleCompleto;
+  if (!detalleCompleto && (dibujados > 0 || fondoGeneral))
+    estadoCarga.textContent = `Cargando detalle de ${imagen.id}…`;
 }
 
 async function actualizarEstado(incluido = null, vistaSolicitada = vista) {
@@ -311,5 +351,8 @@ async function actualizarEstado(incluido = null, vistaSolicitada = vista) {
   return { pendientes: Number(datos.get('pendientes')), enVuelo: Number(datos.get('enVuelo')) };
 }
 
-function mostrarError(error) { console.error(error); }
+function mostrarError(error) {
+  console.error(error);
+  if (!estadoCarga.hidden) estadoCarga.textContent = `No se pudo cargar ${imagen?.id ?? 'la imagen'}. Reintentando…`;
+}
 iniciar().catch(mostrarError);

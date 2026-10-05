@@ -4,3 +4,5 @@ canvas:active{cursor:grabbing}
 #nivelActual{position:fixed;top:12px;left:12px;padding:6px 10px;border-radius:6px;background:#061218d9;color:#fff;font:600 14px system-ui,sans-serif;pointer-events:none;user-select:none}
 #controlImagen{position:fixed;top:12px;right:12px;padding:6px 10px;border-radius:6px;background:#061218e8;color:#fff;font:600 14px system-ui,sans-serif}
 #selectorImagen{margin-left:6px;max-width:45vw;font:inherit}
+#estadoCarga{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);padding:10px 14px;border-radius:6px;background:#061218e8;color:#fff;font:500 15px system-ui,sans-serif;pointer-events:none;text-align:center}
+#estadoCarga[hidden]{display:none}

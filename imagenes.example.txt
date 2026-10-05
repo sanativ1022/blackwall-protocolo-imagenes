@@ -1,0 +1,5 @@
+# Copie este archivo como imagenes.local.txt y cambie las rutas.
+# Una imagen por linea: identificador=ruta absoluta
+imagen24=C:\ruta\a\eso1242a.psb
+imagen55=C:\ruta\a\imagen55.png
+imagen93=C:\ruta\a\imagen93.png

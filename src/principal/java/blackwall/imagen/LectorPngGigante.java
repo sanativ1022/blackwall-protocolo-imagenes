@@ -1,12 +1,21 @@
 package blackwall.imagen;
 
 import java.awt.image.BufferedImage;
+import java.io.BufferedInputStream;
+import java.io.BufferedOutputStream;
+import java.io.DataInputStream;
+import java.io.DataOutputStream;
 import java.io.IOException;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.channels.FileChannel;
 import java.nio.file.Path;
+import java.nio.file.Files;
 import java.nio.file.StandardOpenOption;
+import java.nio.file.StandardCopyOption;
+import java.nio.file.AtomicMoveNotSupportedException;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Arrays;
 
 /** Lectura aleatoria del PNG RGB gigante entregado con IDAT de 8192 bytes y DEFLATE almacenado. */
@@ -98,6 +107,9 @@ final class LectorPngGigante {
         if (actual != null) return actual;
         synchronized (this) {
             if (indice != null) return indice;
+            Path cacheIndice = rutaIndice();
+            Indice guardado = cargarIndice(cacheIndice);
+            if (guardado != null) return indice = guardado;
             try (FileChannel canal = FileChannel.open(archivo, StandardOpenOption.READ)) {
                 long[] iniciosCrudos = new long[1024], iniciosDatos = new long[1024];
                 int[] longitudes = new int[1024];
@@ -129,9 +141,70 @@ final class LectorPngGigante {
                     throw new IOException("Longitud de pixeles PNG incoherente: " + crudo);
                 indice = new Indice(Arrays.copyOf(iniciosCrudos, cantidad),
                         Arrays.copyOf(iniciosDatos, cantidad), Arrays.copyOf(longitudes, cantidad));
+                try { guardarIndice(cacheIndice, indice); }
+                catch (IOException ignorada) { /* La imagen sigue siendo legible sin cache persistente. */ }
                 return indice;
             }
         }
+    }
+
+    private Path rutaIndice() throws IOException {
+        byte[] ruta = archivo.toAbsolutePath().normalize().toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+        byte[] digest;
+        try { digest = MessageDigest.getInstance("SHA-256").digest(ruta); }
+        catch (NoSuchAlgorithmException e) { throw new IOException("SHA-256 no disponible", e); }
+        return Path.of("datos", "indices", java.util.HexFormat.of().formatHex(digest) + ".bwi");
+    }
+
+    private Indice cargarIndice(Path ruta) throws IOException {
+        if (!Files.isRegularFile(ruta)) return null;
+        try (DataInputStream entrada = new DataInputStream(new BufferedInputStream(Files.newInputStream(ruta)))) {
+            if (entrada.readInt() != 0x42574958 || entrada.readInt() != 1
+                    || entrada.readLong() != Files.size(archivo)
+                    || entrada.readLong() != Files.getLastModifiedTime(archivo).toMillis()
+                    || entrada.readLong() != longitudFila * alto
+                    || entrada.readLong() != longitudIdat) return null;
+            int cantidad = entrada.readInt();
+            if (cantidad <= 0 || cantidad > (longitudFila * alto + 32767) / 32768) return null;
+            long[] crudos = new long[cantidad], datos = new long[cantidad];
+            int[] largos = new int[cantidad];
+            long siguiente = 0;
+            for (int i = 0; i < cantidad; i++) {
+                crudos[i] = entrada.readLong();
+                datos[i] = entrada.readLong();
+                largos[i] = entrada.readInt();
+                if (crudos[i] != siguiente || datos[i] < 7 || datos[i] + largos[i] > longitudIdat
+                        || largos[i] <= 0 || largos[i] > 65535) return null;
+                siguiente += largos[i];
+            }
+            if (siguiente != longitudFila * alto || entrada.read() != -1) return null;
+            return new Indice(crudos, datos, largos);
+        } catch (IOException | NegativeArraySizeException fallo) {
+            return null;
+        }
+    }
+
+    private void guardarIndice(Path ruta, Indice bloques) throws IOException {
+        Files.createDirectories(ruta.getParent());
+        Path temporal = Files.createTempFile(ruta.getParent(), "indice-", ".tmp");
+        try {
+            try (DataOutputStream salida = new DataOutputStream(new BufferedOutputStream(Files.newOutputStream(temporal)))) {
+                salida.writeInt(0x42574958);
+                salida.writeInt(1);
+                salida.writeLong(Files.size(archivo));
+                salida.writeLong(Files.getLastModifiedTime(archivo).toMillis());
+                salida.writeLong(longitudFila * alto);
+                salida.writeLong(longitudIdat);
+                salida.writeInt(bloques.longitudes.length);
+                for (int i = 0; i < bloques.longitudes.length; i++) {
+                    salida.writeLong(bloques.iniciosCrudos[i]);
+                    salida.writeLong(bloques.iniciosDatos[i]);
+                    salida.writeInt(bloques.longitudes[i]);
+                }
+            }
+            try { Files.move(temporal, ruta, StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING); }
+            catch (AtomicMoveNotSupportedException e) { Files.move(temporal, ruta, StandardCopyOption.REPLACE_EXISTING); }
+        } finally { Files.deleteIfExists(temporal); }
     }
 
     private void leerCrudo(FileChannel canal, Indice bloques, long posicion, byte[] destino, int desde, int largo) throws IOException {
