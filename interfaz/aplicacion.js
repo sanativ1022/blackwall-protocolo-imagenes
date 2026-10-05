@@ -11,10 +11,11 @@ const formulario = valores => new URLSearchParams(valores).toString();
 const cache = new CacheMosaicos();
 let fondoGeneral = null;
 let fondoGeneralFinal = false;
+let ultimoCuadroCompleto = null;
 const recibidas = new Set();
 const movimientos = [];
 const historialZoom = [];
-let sesion, imagen, nivel = 0, vista = 0;
+let sesion, imagen, nivel = 0, zoomExtra = 0, vista = 0;
 let imagenes = [];
 let generacionImagen = 0;
 let region = { x: 0, y: 0, ancho: 1, alto: 1 };
@@ -75,7 +76,7 @@ function encuadrar() {
 }
 
 function mostrarNivel() {
-  nivelActual.textContent = `Nivel ${nivel}/${imagen.maximo}`;
+  nivelActual.textContent = `Nivel ${nivel}/${imagen.maximo}${zoomExtra ? ` · Acercamiento ${zoomExtra}/3` : ''}`;
 }
 
 function mostrarCarga() {
@@ -90,11 +91,13 @@ function configurarEventos() {
     imagen = elegida;
     generacionImagen++;
     nivel = 0;
+    zoomExtra = 0;
     historialZoom.length = 0;
     movimientos.length = 0;
     arrastre = null;
     fondoGeneral = null;
     fondoGeneralFinal = false;
+    ultimoCuadroCompleto = null;
     vistaConcluida = vista;
     encuadrar();
     mostrarNivel();
@@ -102,14 +105,20 @@ function configurarEventos() {
     dibujar();
     solicitarPronto();
   });
-  addEventListener('resize', () => { historialZoom.length = 0; ajustarCanvas(); solicitarPronto(); });
+  addEventListener('resize', () => {
+    historialZoom.length = 0;
+    ajustarCanvas();
+    dibujar();
+    solicitarPronto();
+  });
   canvas.addEventListener('wheel', evento => {
     evento.preventDefault();
-    const resultado = cambiarZoom({ nivel, region, direccion: evento.deltaY < 0 ? 1 : -1,
+    const resultado = cambiarZoom({ nivel, zoomExtra, region, direccion: evento.deltaY < 0 ? 1 : -1,
       pivoteX: evento.offsetX / canvas.clientWidth, pivoteY: evento.offsetY / canvas.clientHeight,
       imagen, historial: historialZoom });
-    if (resultado.nivel === nivel) return;
+    if (resultado.nivel === nivel && resultado.zoomExtra === zoomExtra) return;
     nivel = resultado.nivel;
+    zoomExtra = resultado.zoomExtra;
     region = resultado.region;
     mostrarNivel();
     solicitarPronto();
@@ -307,6 +316,9 @@ function dibujar() {
     region.ancho * fondoGeneral.width / imagen.ancho,
     region.alto * fondoGeneral.height / imagen.alto,
     0, 0, canvas.clientWidth, canvas.clientHeight);
+  // El último cuadro completo cubre huecos mientras llegan mosaicos de otra zona.
+  if (ultimoCuadroCompleto) contexto.drawImage(ultimoCuadroCompleto, 0, 0,
+    canvas.clientWidth, canvas.clientHeight);
   // Mantener una imagen de contexto mientras llegan mosaicos mas detallados.
   const disponibles = [...cache].filter(([id]) => {
     const partes = id.split(':');
@@ -318,6 +330,10 @@ function dibujar() {
   let dibujados = 0;
   for (const [id, mosaico] of disponibles) {
     const partes = id.split(':');
+    // A máximo acercamiento, una miniatura ampliada puede ser solo un color.
+    // Si existe un cuadro completo, conservarlo hasta recibir mosaicos del nivel actual.
+    if (ultimoCuadroCompleto && imagen.formato === 'PNG' && nivel === imagen.maximo &&
+        Number(partes[1]) < nivel) continue;
     const lado = 256 * 2 ** (imagen.maximo - Number(partes[1]));
     const x = Number(partes[2]) * lado, y = Number(partes[3]) * lado;
     if (x + lado < region.x || y + lado < region.y || x > region.x + region.ancho || y > region.y + region.alto) continue;
@@ -341,6 +357,13 @@ function dibujar() {
     }
   }
   estadoCarga.hidden = detalleCompleto;
+  if (detalleCompleto && (dibujados > 0 || fondoGeneral)) {
+    const cuadro = document.createElement('canvas');
+    cuadro.width = canvas.width;
+    cuadro.height = canvas.height;
+    cuadro.getContext('2d').drawImage(canvas, 0, 0);
+    ultimoCuadroCompleto = cuadro;
+  }
   if (!detalleCompleto && (dibujados > 0 || fondoGeneral))
     estadoCarga.textContent = `Cargando detalle de ${imagen.id}…`;
 }
