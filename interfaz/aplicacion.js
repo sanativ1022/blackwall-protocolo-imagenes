@@ -6,6 +6,12 @@ const canvas = document.querySelector('#visor');
 const nivelActual = document.querySelector('#nivelActual');
 const estadoCarga = document.querySelector('#estadoCarga');
 const selectorImagen = document.querySelector('#selectorImagen');
+const acercar = document.querySelector('#acercar');
+const alejar = document.querySelector('#alejar');
+const vistaGeneral = document.querySelector('#vistaGeneral');
+const zoomNivel = document.querySelector('#zoomNivel');
+const pantallaCompleta = document.querySelector('#pantallaCompleta');
+const ayudaNavegacion = document.querySelector('#ayudaNavegacion');
 const contexto = canvas.getContext('2d');
 const formulario = valores => new URLSearchParams(valores).toString();
 const cache = new CacheMosaicos();
@@ -77,6 +83,36 @@ function encuadrar() {
 
 function mostrarNivel() {
   nivelActual.textContent = `Nivel ${nivel}/${imagen.maximo}${zoomExtra ? ` · Acercamiento ${zoomExtra}/3` : ''}`;
+  zoomNivel.max = imagen.maximo + (imagen.formato === 'PNG' ? 3 : 0);
+  zoomNivel.value = nivel + zoomExtra;
+  zoomNivel.disabled = false;
+  acercar.disabled = nivel === imagen.maximo && (imagen.formato !== 'PNG' || zoomExtra === 3);
+  alejar.disabled = nivel === 0 && zoomExtra === 0;
+  vistaGeneral.disabled = false;
+}
+
+function aplicarZoom(direccion, pivoteX = 0.5, pivoteY = 0.5) {
+  const resultado = cambiarZoom({ nivel, zoomExtra, region, direccion, pivoteX, pivoteY,
+    imagen, historial: historialZoom });
+  if (resultado.nivel === nivel && resultado.zoomExtra === zoomExtra) return;
+  nivel = resultado.nivel;
+  zoomExtra = resultado.zoomExtra;
+  region = resultado.region;
+  ayudaNavegacion.hidden = true;
+  mostrarNivel();
+  dibujar();
+  solicitarPronto();
+}
+
+function volverAVistaGeneral() {
+  nivel = 0;
+  zoomExtra = 0;
+  historialZoom.length = 0;
+  encuadrar();
+  ayudaNavegacion.hidden = true;
+  mostrarNivel();
+  dibujar();
+  solicitarPronto();
 }
 
 function mostrarCarga() {
@@ -85,6 +121,35 @@ function mostrarCarga() {
 }
 
 function configurarEventos() {
+  acercar.addEventListener('click', () => aplicarZoom(1));
+  alejar.addEventListener('click', () => aplicarZoom(-1));
+  zoomNivel.addEventListener('input', () => {
+    const destino = Number(zoomNivel.value);
+    const actual = nivel + zoomExtra;
+    const direccion = Math.sign(destino - actual);
+    for (let paso = actual; paso !== destino; paso += direccion) aplicarZoom(direccion);
+  });
+  vistaGeneral.addEventListener('click', volverAVistaGeneral);
+  pantallaCompleta.addEventListener('click', alternarPantallaCompleta);
+  document.addEventListener('fullscreenchange', () => {
+    const activa = document.fullscreenElement === document.querySelector('.visor');
+    pantallaCompleta.setAttribute('aria-label', activa ? 'Salir de pantalla completa' : 'Activar pantalla completa');
+    pantallaCompleta.title = activa ? 'Salir de pantalla completa (F)' : 'Pantalla completa (F)';
+    requestAnimationFrame(() => {
+      ajustarCanvas();
+      if (imagen) { dibujar(); solicitarPronto(); }
+    });
+  });
+  addEventListener('keydown', evento => {
+    if (evento.altKey || evento.ctrlKey || evento.metaKey ||
+        ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement?.tagName)) return;
+    if (evento.key === '+' || evento.key === '=') aplicarZoom(1);
+    else if (evento.key === '-') aplicarZoom(-1);
+    else if (evento.key === '0') volverAVistaGeneral();
+    else if (evento.key.toLowerCase() === 'f') alternarPantallaCompleta();
+    else return;
+    evento.preventDefault();
+  });
   selectorImagen.addEventListener('change', () => {
     const elegida = imagenes.find(entrada => entrada.id === selectorImagen.value);
     if (!elegida || elegida.id === imagen.id) return;
@@ -113,17 +178,11 @@ function configurarEventos() {
   });
   canvas.addEventListener('wheel', evento => {
     evento.preventDefault();
-    const resultado = cambiarZoom({ nivel, zoomExtra, region, direccion: evento.deltaY < 0 ? 1 : -1,
-      pivoteX: evento.offsetX / canvas.clientWidth, pivoteY: evento.offsetY / canvas.clientHeight,
-      imagen, historial: historialZoom });
-    if (resultado.nivel === nivel && resultado.zoomExtra === zoomExtra) return;
-    nivel = resultado.nivel;
-    zoomExtra = resultado.zoomExtra;
-    region = resultado.region;
-    mostrarNivel();
-    solicitarPronto();
+    aplicarZoom(evento.deltaY < 0 ? 1 : -1,
+      evento.offsetX / canvas.clientWidth, evento.offsetY / canvas.clientHeight);
   }, { passive: false });
   canvas.addEventListener('pointerdown', evento => {
+    ayudaNavegacion.hidden = true;
     arrastre = { x: evento.clientX, y: evento.clientY, tiempo: performance.now() };
     movimientos.length = 0;
     canvas.setPointerCapture(evento.pointerId);
@@ -146,6 +205,13 @@ function configurarEventos() {
     movimientoPendiente = resumenMovimiento();
     solicitarPronto(movimientoPendiente);
   });
+}
+
+async function alternarPantallaCompleta() {
+  try {
+    if (document.fullscreenElement) await document.exitFullscreen();
+    else await document.querySelector('.visor').requestFullscreen();
+  } catch (error) { mostrarError(error); }
 }
 
 function resumenMovimiento() {

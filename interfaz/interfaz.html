@@ -1,7 +1,46 @@
 <!doctype html>
-<html lang="es"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<title>Visor BlackWall</title><link rel="stylesheet" href="estilos.css"></head>
-<body><canvas id="visor"></canvas><output id="nivelActual" aria-live="polite">Nivel —</output>
-<output id="estadoCarga" role="status" aria-live="polite">Preparando imagen…</output>
-<label id="controlImagen" for="selectorImagen">Imagen <select id="selectorImagen" aria-label="Seleccionar imagen"></select></label>
-<script type="module" src="aplicacion.js"></script></body></html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="theme-color" content="#101820">
+  <title>Visor BlackWall</title>
+  <link rel="stylesheet" href="estilos.css">
+</head>
+<body>
+  <main class="visor" aria-label="Visor de imágenes grandes">
+    <canvas id="visor" aria-label="Imagen: usa la rueda para acercar y arrastra para desplazarte"></canvas>
+
+    <header class="cabecera" aria-label="Controles del visor">
+      <div class="identidad">
+        <span class="marca-icono" aria-hidden="true"><span></span><span></span><span></span><span></span></span>
+        <span class="marca-texto"><strong>BlackWall</strong><small>Visor de imágenes</small></span>
+      </div>
+      <output id="nivelActual" class="nivel" aria-live="polite">Nivel —</output>
+    </header>
+
+    <label id="controlImagen" class="control-imagen" for="selectorImagen">
+      <span>Archivo abierto</span>
+      <select id="selectorImagen" aria-label="Seleccionar imagen"></select>
+    </label>
+
+    <div class="acciones" role="group" aria-label="Controles de acercamiento">
+      <button id="alejar" type="button" aria-label="Alejar" title="Alejar (−)" disabled>−</button>
+      <span class="acciones-separador" aria-hidden="true"></span>
+      <button id="acercar" type="button" aria-label="Acercar" title="Acercar (+)" disabled>+</button>
+      <span class="acciones-separador" aria-hidden="true"></span>
+      <label class="control-zoom" for="zoomNivel"><span>Zoom</span><input id="zoomNivel" type="range" min="0" max="1" value="0" aria-label="Nivel de zoom" disabled></label>
+      <span class="acciones-separador" aria-hidden="true"></span>
+      <button id="vistaGeneral" class="vista-general" type="button" title="Volver a la vista general (0)" disabled>Vista general</button>
+      <span class="acciones-separador" aria-hidden="true"></span>
+      <button id="pantallaCompleta" class="pantalla-completa" type="button" aria-label="Activar pantalla completa" title="Pantalla completa (F)">
+        <svg viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5"/></svg>
+      </button>
+    </div>
+
+    <p id="ayudaNavegacion" class="ayuda">Arrastra para explorar <span aria-hidden="true">·</span> Usa la rueda para acercar</p>
+    <output id="estadoCarga" class="estado-carga" role="status" aria-live="polite">Preparando imagen…</output>
+  </main>
+  <script type="module" src="aplicacion.js"></script>
+</body>
+</html>
