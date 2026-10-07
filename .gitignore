@@ -2,3 +2,6 @@ construccion/
 datos/*
 !datos/.gitkeep
 imagenes.local.txt
+
+# Archivos temporales de Word
+~$*
